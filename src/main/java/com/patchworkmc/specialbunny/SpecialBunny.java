@@ -32,16 +32,22 @@ public class SpecialBunny {
 	private static final int AT = 6;
 	private static final int FORGE_LEGACY = 7;
 	private static final int MCREATOR = 8;
+	private static final int MIXINS_FABRIC = 9;
+	private static final int MIXINS_FORGE = 10;
+
+	// aggressive scan results
+	private static final int AGGRESSIVE_MCREATOR = 0;
+	private static final int AGGRESSIVE_MIXINS = 1;
 
 	public static void main(String[] args) throws Throwable {
 		System.out.println("PatchworkMC SpecialBunny: Mass Mod Statistics");
 
-		Path holder = Paths.get("../curse-indexer-may14/mods");
+		Path holder = Paths.get("input");
 		Path output = Paths.get("output");
 
 		Files.createDirectories(output);
 
-		final int[] totals = new int[9];
+		final int[] totals = new int[11];
 
 		Files.walkFileTree(holder, new SimpleFileVisitor<Path>() {
 			public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
@@ -109,14 +115,20 @@ public class SpecialBunny {
 				boolean fabric = Files.exists(jar.getPath("/fabric.mod.json"));
 				boolean forge = Files.exists(jar.getPath("/META-INF/mods.toml"));
 				boolean forgeLegacy = Files.exists(jar.getPath("/mcmod.info"));
-				boolean mcreator = false;
 
-				if (Files.exists(jar.getPath("/net/mcreator"))) {
-					mcreator = true;
-				} else if (aggressiveMCreatorScan(jar.getPath("/"))) {
-					System.out.println("Discovered MCreator mod with aggressive scan: " + candidate);
+				boolean[] aggressive = aggressiveScan(jar.getPath("/"));
+				// System.out.println("Discovered MCreator mod with aggressive scan: " + candidate);
+				boolean mcreator = Files.exists(jar.getPath("/net/mcreator")) || aggressive[AGGRESSIVE_MCREATOR];
+				boolean mixins = aggressive[AGGRESSIVE_MIXINS];
 
-					mcreator = true;
+				if (mixins) {
+					if (fabric) {
+						totals[MIXINS_FABRIC]++;
+					}
+
+					if (forge) {
+						totals[MIXINS_FORGE]++;
+					}
 				}
 
 				if (mcreator) {
@@ -151,6 +163,9 @@ public class SpecialBunny {
 		System.out.println("Total mods with core mods: " + totals[COREMOD] + " (" + percent(totals[COREMOD], totals[FORGE]) + " of Forge mods, " + percent(totals[COREMOD], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
 		System.out.println("Total mods with access transformers: " + totals[AT] + " (" + percent(totals[AT], totals[FORGE]) + " of Forge mods, " + percent(totals[AT], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
 
+		System.out.println("Forge mods using Mixins: " + totals[MIXINS_FORGE]  + " (" + percent(totals[MIXINS_FORGE], totals[FORGE]) + " of Forge mods, " + percent(totals[MIXINS_FORGE], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
+		System.out.println("Fabric mods using Mixins: " + totals[MIXINS_FABRIC] + " (" + percent(totals[MIXINS_FABRIC], totals[FABRIC]) + " of Fabric mods)");
+
 		System.out.println("Fabric: " + totals[FABRIC] + " Forge: " + totals[FORGE] + " Both: " + totals[BOTH] + " Forge 1.12 or below: " + totals[FORGE_LEGACY] + " Neither: " + totals[NEITHER]);
 	}
 
@@ -158,23 +173,22 @@ public class SpecialBunny {
 		return ((value * 1000 / divisor) / 10D) + "%";
 	}
 
-	private static boolean aggressiveMCreatorScan(Path root) throws IOException {
-		boolean[] found = new boolean[1];
+	private static boolean[] aggressiveScan(Path root) throws IOException {
+		boolean[] found = new boolean[2];
 
 		Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
 			public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
 				if (candidate.toString().endsWith("ModElement.class")) {
-					System.out.println("Probably MCreator: " + candidate);
-
-					found[0] = true;
-					return FileVisitResult.TERMINATE;
+					found[AGGRESSIVE_MCREATOR] = true;
+				} else if (candidate.toString().endsWith("mixins.json") || candidate.toString().contains("refmap") || (candidate.toString().endsWith(".json") && candidate.toString().startsWith("mixins"))) {
+					found[AGGRESSIVE_MIXINS] = true;
 				}
 
 				return FileVisitResult.CONTINUE;
 			}
 		});
 
-		return found[0];
+		return found;
 	}
 
 	private static void scanServices(Path root) throws IOException {
