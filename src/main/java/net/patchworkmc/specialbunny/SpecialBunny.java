@@ -1,4 +1,4 @@
-package com.patchworkmc.specialbunny;
+package net.patchworkmc.specialbunny;
 
 import java.io.IOException;
 import java.net.URI;
