@@ -31,12 +31,13 @@ public class SpecialBunny {
 	private static final int NEITHER = 5;
 	private static final int AT = 6;
 	private static final int FORGE_LEGACY = 7;
+	private static final int MCREATOR = 8;
 
 	public static void main(String[] args) throws Throwable {
 		System.out.println("PatchworkMC SpecialBunny: Mass Mod Statistics");
 
-		Path holder = Paths.get("/home/coderbot/Programming/PatchworkMC/curse-indexer-may14/mods");
-		Path output = Paths.get("output-may14");
+		Path holder = Paths.get("../curse-indexer-may14/mods");
+		Path output = Paths.get("output");
 
 		Files.createDirectories(output);
 
@@ -108,6 +109,23 @@ public class SpecialBunny {
 				boolean fabric = Files.exists(jar.getPath("/fabric.mod.json"));
 				boolean forge = Files.exists(jar.getPath("/META-INF/mods.toml"));
 				boolean forgeLegacy = Files.exists(jar.getPath("/mcmod.info"));
+				boolean mcreator = false;
+
+				if (Files.exists(jar.getPath("/net/mcreator"))) {
+					mcreator = true;
+				} else if (aggressiveMCreatorScan(jar.getPath("/"))) {
+					System.out.println("Discovered MCreator mod with aggressive scan: " + candidate);
+
+					mcreator = true;
+				}
+
+				if (mcreator) {
+					if (!forge && !forgeLegacy) {
+						System.err.println("Non-forge MCreator mod? " + candidate);
+					}
+
+					totals[MCREATOR]++;
+				}
 
 				if (fabric && forge) {
 					System.err.println("Mod had both fabric and forge? " + candidate);
@@ -129,10 +147,34 @@ public class SpecialBunny {
 		});
 
 		System.out.println("Total mods: " + totals[ALL]);
-		System.out.println("Total mods with core mods: " + totals[COREMOD] + " (" + ((totals[COREMOD] * 1000 / totals[FORGE]) / 10D) + "% of Forge mods)");
-		System.out.println("Total mods with access transformers: " + totals[AT] + " (" + ((totals[AT] * 1000 / totals[FORGE]) / 10D) + "% of Forge mods)");
+		System.out.println("Total mods using MCreator: " + totals[MCREATOR] + " (" + percent(totals[MCREATOR], totals[FORGE]) + " of Forge mods)");
+		System.out.println("Total mods with core mods: " + totals[COREMOD] + " (" + percent(totals[COREMOD], totals[FORGE]) + " of Forge mods, " + percent(totals[COREMOD], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
+		System.out.println("Total mods with access transformers: " + totals[AT] + " (" + percent(totals[AT], totals[FORGE]) + " of Forge mods, " + percent(totals[AT], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
 
 		System.out.println("Fabric: " + totals[FABRIC] + " Forge: " + totals[FORGE] + " Both: " + totals[BOTH] + " Forge 1.12 or below: " + totals[FORGE_LEGACY] + " Neither: " + totals[NEITHER]);
+	}
+
+	private static String percent(int value, int divisor) {
+		return ((value * 1000 / divisor) / 10D) + "%";
+	}
+
+	private static boolean aggressiveMCreatorScan(Path root) throws IOException {
+		boolean[] found = new boolean[1];
+
+		Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+			public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
+				if (candidate.toString().endsWith("ModElement.class")) {
+					System.out.println("Probably MCreator: " + candidate);
+
+					found[0] = true;
+					return FileVisitResult.TERMINATE;
+				}
+
+				return FileVisitResult.CONTINUE;
+			}
+		});
+
+		return found[0];
 	}
 
 	private static void scanServices(Path root) throws IOException {
