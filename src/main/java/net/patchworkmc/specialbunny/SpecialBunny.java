@@ -15,12 +15,16 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.tree.ClassNode;
 
 public class SpecialBunny {
 	private static final int ALL = 0;
@@ -39,10 +43,12 @@ public class SpecialBunny {
 	private static final int AGGRESSIVE_MCREATOR = 0;
 	private static final int AGGRESSIVE_MIXINS = 1;
 
+	private static final HashMap<String, AtomicInteger> FORGE_CLASSES = new HashMap<>();
+
 	public static void main(String[] args) throws Throwable {
 		System.out.println("PatchworkMC SpecialBunny: Mass Mod Statistics");
 
-		Path holder = Paths.get("input");
+		Path holder = Paths.get("/home/glitch/curse-indexer/mods");
 		Path output = Paths.get("output");
 
 		Files.createDirectories(output);
@@ -74,10 +80,41 @@ public class SpecialBunny {
 
 				totals[ALL]++;
 
-				Path manifest = jar.getPath("/META-INF/coremods.json");
+				Files.walkFileTree(jar.getPath("/"), new SimpleFileVisitor<Path>()  {
+					public FileVisitResult visitFile(Path file, BasicFileAttributes subAttributes) throws IOException {
+						if (file.toString().endsWith(".class")) {
+							byte[] content = Files.readAllBytes(file);
+							ClassReader reader = new ClassReader(content);
+							int maxIndex = reader.getItemCount();
+							if (maxIndex < 1) {
+								return FileVisitResult.CONTINUE;
+							}
+							int arrSize = 512;
+							// 1-indexed :concern:
+							for(int i = 1; i < maxIndex; i++) {
+								char[] arr = new char[arrSize];
+								try {
+									reader.readConst(i, arr);
+								// Sometimes constants point to 0 offset for some reason and that explodes ASM, so we just catch it
+								} catch (IllegalArgumentException | ArrayIndexOutOfBoundsException ex) {
+									continue;
+								}
+
+								String className = new String(arr);
+								if (className.startsWith("net/minecraftforge")) {
+									FORGE_CLASSES.computeIfAbsent(className, s -> new AtomicInteger()).incrementAndGet();
+								}
+
+							}
+						}
+						return FileVisitResult.CONTINUE;
+					}
+				});
+
+				Path coremodPath = jar.getPath("/META-INF/coremods.json");
 
 				try {
-					String coremods = new String(Files.readAllBytes(manifest), StandardCharsets.UTF_8);
+					String coremods = new String(Files.readAllBytes(coremodPath), StandardCharsets.UTF_8);
 
 					handleCoreMods(candidate, jar, coremods, output);
 
@@ -157,7 +194,7 @@ public class SpecialBunny {
 				return FileVisitResult.CONTINUE;
 			}
 		});
-
+		HashMap<String, AtomicInteger> debug = FORGE_CLASSES;
 		System.out.println("Total mods: " + totals[ALL]);
 		System.out.println("Total mods using MCreator: " + totals[MCREATOR] + " (" + percent(totals[MCREATOR], totals[FORGE]) + " of Forge mods)");
 		System.out.println("Total mods with core mods: " + totals[COREMOD] + " (" + percent(totals[COREMOD], totals[FORGE]) + " of Forge mods, " + percent(totals[COREMOD], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
