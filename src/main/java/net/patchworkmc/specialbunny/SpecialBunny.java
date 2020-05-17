@@ -15,16 +15,22 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.tree.ClassNode;
 
 public class SpecialBunny {
 	private static final int ALL = 0;
@@ -79,37 +85,6 @@ public class SpecialBunny {
 				}
 
 				totals[ALL]++;
-
-				Files.walkFileTree(jar.getPath("/"), new SimpleFileVisitor<Path>()  {
-					public FileVisitResult visitFile(Path file, BasicFileAttributes subAttributes) throws IOException {
-						if (file.toString().endsWith(".class")) {
-							byte[] content = Files.readAllBytes(file);
-							ClassReader reader = new ClassReader(content);
-							int maxIndex = reader.getItemCount();
-							if (maxIndex < 1) {
-								return FileVisitResult.CONTINUE;
-							}
-							int arrSize = 512;
-							// 1-indexed :concern:
-							for(int i = 1; i < maxIndex; i++) {
-								char[] arr = new char[arrSize];
-								try {
-									reader.readConst(i, arr);
-								// Sometimes constants point to 0 offset for some reason and that explodes ASM, so we just catch it
-								} catch (IllegalArgumentException | ArrayIndexOutOfBoundsException ex) {
-									continue;
-								}
-
-								String className = new String(arr);
-								if (className.startsWith("net/minecraftforge")) {
-									FORGE_CLASSES.computeIfAbsent(className, s -> new AtomicInteger()).incrementAndGet();
-								}
-
-							}
-						}
-						return FileVisitResult.CONTINUE;
-					}
-				});
 
 				Path coremodPath = jar.getPath("/META-INF/coremods.json");
 
@@ -191,10 +166,53 @@ public class SpecialBunny {
 					totals[NEITHER]++;
 				}
 
+				if(forge && !mcreator) {
+					HashSet<String> forgeClasses = new HashSet<>();
+					Files.walkFileTree(jar.getPath("/"), new SimpleFileVisitor<Path>()  {
+						public FileVisitResult visitFile(Path file, BasicFileAttributes subAttributes) throws IOException {
+							if (file.toString().endsWith(".class")) {
+								byte[] content = Files.readAllBytes(file);
+								ClassReader reader = new ClassReader(content);
+								int maxIndex = reader.getItemCount();
+								if (maxIndex < 1) {
+									return FileVisitResult.CONTINUE;
+								}
+								int arrSize = 512;
+								// 1-indexed :concern:
+								for(int i = 1; i < maxIndex; i++) {
+									char[] arr = new char[arrSize];
+									try {
+										reader.readConst(i, arr);
+										// Sometimes constants can't be parsed for some reason... CBA to find out why so just swallow it.
+										// Sometimes constants point to 0 offset for some reason and that explodes ASM
+									} catch (IllegalArgumentException | ArrayIndexOutOfBoundsException swallowed) {
+										continue;
+									}
+
+									String className = new String(arr);
+									if (className.startsWith("net/minecraftforge")) {
+										//									FORGE_CLASSES.computeIfAbsent(className, s -> new AtomicInteger()).incrementAndGet();
+										forgeClasses.add(className.replace("\u0000", ""));
+									}
+								}
+							}
+							return FileVisitResult.CONTINUE;
+						}
+					});
+
+					for (String forgeClass : forgeClasses) {
+						FORGE_CLASSES.computeIfAbsent(forgeClass, s -> new AtomicInteger()).incrementAndGet();
+					}
+
+				}
 				return FileVisitResult.CONTINUE;
 			}
 		});
-		HashMap<String, AtomicInteger> debug = FORGE_CLASSES;
+		Gson gson = new GsonBuilder().setPrettyPrinting().create();
+		String json = gson.toJson(decSortByValue(FORGE_CLASSES));
+		Files.write(Paths.get("./output.json"), json.getBytes(StandardCharsets.UTF_8));
+
+
 		System.out.println("Total mods: " + totals[ALL]);
 		System.out.println("Total mods using MCreator: " + totals[MCREATOR] + " (" + percent(totals[MCREATOR], totals[FORGE]) + " of Forge mods)");
 		System.out.println("Total mods with core mods: " + totals[COREMOD] + " (" + percent(totals[COREMOD], totals[FORGE]) + " of Forge mods, " + percent(totals[COREMOD], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
@@ -286,5 +304,25 @@ public class SpecialBunny {
 			System.out.println("Found coremod: " + name);
 			//System.out.println(javascript);
 		}
+	}
+
+	// function to sort hashmap by values
+	private static HashMap<String, Integer> decSortByValue(HashMap<String, AtomicInteger> hm) {
+		// Create a list from elements of HashMap
+		List<Map.Entry<String, AtomicInteger>> list =
+			new LinkedList<>(hm.entrySet());
+
+		// Sort the list
+		list.sort(Collections.reverseOrder(Comparator.comparingInt(e -> e.getValue().get())));
+
+		// put data from sorted list to hashmap
+		// Linked so that order is preserved.
+		HashMap<String, Integer> temp = new LinkedHashMap<>();
+
+		for (Map.Entry<String, AtomicInteger> aa : list) {
+			temp.put(aa.getKey(), aa.getValue().get());
+		}
+
+		return temp;
 	}
 }
