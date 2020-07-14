@@ -166,7 +166,7 @@ public class SpecialBunny {
 		System.out.println("Forge mods using Mixins: " + totals[MIXINS_FORGE]  + " (" + percent(totals[MIXINS_FORGE], totals[FORGE]) + " of Forge mods, " + percent(totals[MIXINS_FORGE], totals[FORGE] - totals[MCREATOR]) + " excluding MCreator)");
 		System.out.println("Fabric mods using Mixins: " + totals[MIXINS_FABRIC] + " (" + percent(totals[MIXINS_FABRIC], totals[FABRIC]) + " of Fabric mods)");
 
-		System.out.println("Fabric: " + totals[FABRIC] + " Forge: " + totals[FORGE] + " Both: " + totals[BOTH] + " Forge 1.12 or below: " + totals[FORGE_LEGACY] + " Neither: " + totals[NEITHER]);
+		System.out.println("Fabric: " + totals[FABRIC] + " (" + percent(totals[FABRIC], totals[ALL]) + ") Forge: " + totals[FORGE] + " (" + percent(totals[FORGE], totals[ALL]) + ") Both: " + totals[BOTH] + " (" + percent(totals[BOTH], totals[ALL]) + ") Forge 1.12 or below: " + totals[FORGE_LEGACY] + " (" + percent(totals[FORGE_LEGACY], totals[ALL]) + ") Neither: " + totals[NEITHER] + " (" + percent(totals[NEITHER], totals[ALL]) + ")");
 	}
 
 	private static String percent(int value, int divisor) {
