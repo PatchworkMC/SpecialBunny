@@ -11,19 +11,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 public class ModScanner {
-    private int totalMods = 0;
-    private int forgeMods = 0;
-    private int legacyForgeMods = 0;
-    private int fabricMods = 0;
-    private int MCreatorMods = 0;
-    private int fabricAndForgeMods = 0; // aka "both"
-    private int unknownMods = 0; // aka "neither"
-
-    private int accessTransformers = 0;
-    private int fabricMixins = 0;
-    private int forgeMixins = 0;
-    private int forgeCoremods = 0;
-
     private Optional<Path> outputPath = Optional.empty();
 
     public ModScanner() {
@@ -41,8 +28,6 @@ public class ModScanner {
     }
 
     public ModInfo scan(FileSystem jar) {
-        ++totalMods;
-
         ModInfo info = new ModInfo();
 
         info.hasForgeCoremods = checkForgeCoreMods(jar);
@@ -59,44 +44,9 @@ public class ModScanner {
             info.isForge = ModInfo.ForgeType.NO;
         }
 
-        Path candidate = jar.getPath("/");
-
-        if (info.isFabric && info.isForge == ModInfo.ForgeType.YES) {
-            System.err.println("Mod had both fabric and forge? " + candidate);
-            ++fabricAndForgeMods;
-        } else if (info.isFabric) {
-            ++fabricMods;
-        } else if (info.isForge == ModInfo.ForgeType.YES) {
-            ++forgeMods;
-        } else if (info.isForge == ModInfo.ForgeType.LEGACY) {
-            System.err.println("Some dummy published a 1.12 or below mod on 1.13+: " + candidate);
-            ++legacyForgeMods;
-        } else {
-            System.err.println("Mod had neither fabric nor forge? " + candidate);
-            ++unknownMods;
-        }
-
         info.isMCreator = Files.exists(jar.getPath("/net/mcreator"));
 
         aggressiveScan(jar.getPath("/"), info); // MCreator and Mixins
-
-        if (info.hasMixins) {
-            if (info.isFabric) {
-                ++fabricMixins;
-            }
-
-            if (info.isForge == ModInfo.ForgeType.YES) {
-                ++forgeMixins;
-            }
-        }
-
-        if (info.isMCreator) {
-            if (info.isForge == ModInfo.ForgeType.NO) {
-                System.err.println("Non-forge MCreator mod? " + candidate);
-            }
-
-            ++MCreatorMods;
-        }
 
         return info;
     }
@@ -109,8 +59,6 @@ public class ModScanner {
             // no coremods
             return false;
         }
-
-        ++forgeCoremods;
 
         System.out.println("Found coremods.json in " + fs.getPath("/"));
         System.out.println(coremods);
@@ -162,7 +110,6 @@ public class ModScanner {
             // no access transformers
             return Optional.empty();
         }
-        ++accessTransformers;
 
         // TODO: output
 //        Path modFolder = createModFolder(candidate, output);
@@ -211,51 +158,7 @@ public class ModScanner {
                 }
             });
         } catch (IOException swallowed) {
-            // TODO: original doesn't catch this exception i think, should we  just let this be a fatal error?
+            // TODO: original doesn't catch this exception i think, should we just let this be a fatal error?
         }
-    }
-
-    public int getTotalMods() {
-        return totalMods;
-    }
-
-    public int getForgeMods() {
-        return forgeMods;
-    }
-
-    public int getLegacyForgeMods() {
-        return legacyForgeMods;
-    }
-
-    public int getFabricMods() {
-        return fabricMods;
-    }
-
-    public int getMCreatorMods() {
-        return MCreatorMods;
-    }
-
-    public int getFabricAndForgeMods() {
-        return fabricAndForgeMods;
-    }
-
-    public int getUnknownMods() {
-        return unknownMods;
-    }
-
-    public int getAccessTransformers() {
-        return accessTransformers;
-    }
-
-    public int getFabricMixins() {
-        return fabricMixins;
-    }
-
-    public int getForgeMixins() {
-        return forgeMixins;
-    }
-
-    public int getForgeCoremods() {
-        return forgeCoremods;
     }
 }
