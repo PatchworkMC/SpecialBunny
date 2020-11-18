@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Map;
 import java.util.Optional;
 
 import com.google.gson.JsonElement;
@@ -73,61 +74,83 @@ public class ModScanner {
 
         JsonObject map = (JsonObject) element;
 
-        // TODO: handle output
-//        Path modFolder = createModFolder(root, output);
-//
-//        for(Map.Entry<String, JsonElement> entry:  map.entrySet()) {
-//            String name = entry.getKey();
-//            String path = entry.getValue().getAsString();
-//
-//            Path coremodFile = jar.getPath(path);
-//            String javascript = new String(Files.readAllBytes(coremodFile), StandardCharsets.UTF_8);
-//
-//            String fileName = coremodFile.getFileName().toString();
-//            Path target = modFolder.resolve(fileName);
-//
-//            while (Files.exists(target)) {
-//                System.err.println("Coremod already exists: " + target);
-//
-//                fileName = "-" + fileName;
-//                target = modFolder.resolve(fileName);
-//            }
-//
-//            Files.copy(coremodFile, target, StandardCopyOption.REPLACE_EXISTING);
-//
-//            System.out.println("Found coremod: " + name);
-//            //System.out.println(javascript);
-//        }
+        getModFolder(fs).ifPresent(modFolder -> {
+            for(Map.Entry<String, JsonElement> entry:  map.entrySet()) {
+                String name = entry.getKey();
+                String path = entry.getValue().getAsString();
+
+                Path coremodFile = fs.getPath(path);
+
+                String fileName = coremodFile.getFileName().toString();
+                Path target = modFolder.resolve(fileName);
+
+                while (Files.exists(target)) {
+                    System.err.println("Coremod already exists: " + target);
+
+                    fileName = "-" + fileName;
+                    target = modFolder.resolve(fileName);
+                }
+
+                try {
+                    Files.copy(coremodFile, target, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException e) {
+                    System.err.println("Failed to copy file: " + coremodFile);
+                    e.printStackTrace();
+                    continue;
+                }
+
+                System.out.println("Found coremod: " + name);
+
+//                try {
+//                    String javascript = new String(Files.readAllBytes(coremodFile), StandardCharsets.UTF_8);
+//                    System.out.println(javascript);
+//                } catch (IOException e) {
+//                    System.err.println("Failed to read file: " + coremodFile);
+//                    e.printStackTrace();
+//                }
+            }
+        });
 
         return true;
     }
 
     private Optional<String> checkAccessTransformers(FileSystem fs) {
+        Path atPath = fs.getPath("/META-INF/accesstransformer.cfg");
         String accesstransformers;
         try {
-             accesstransformers = new String(Files.readAllBytes(fs.getPath("/META-INF/accesstransformer.cfg")), StandardCharsets.UTF_8);
+             accesstransformers = new String(Files.readAllBytes(atPath), StandardCharsets.UTF_8);
         } catch (IOException swallowed) {
             // no access transformers
             return Optional.empty();
         }
 
-        // TODO: output
-//        Path modFolder = createModFolder(candidate, output);
-//        Files.copy(atPath, modFolder.resolve("accesstransformer.cfg"), StandardCopyOption.REPLACE_EXISTING);
+        getModFolder(fs).ifPresent(modFolder -> {
+            try {
+                Files.copy(atPath, modFolder.resolve("accesstransformer.cfg"), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                System.err.println("Failed to copy accesstransformers.");
+                e.printStackTrace();
+            }
+        });
 
         return Optional.of(accesstransformers);
     }
 
-    private static void scanServices(FileSystem fs) {
-        Path root = fs.getPath("/META-INF/services");
+    private void scanServices(FileSystem fs) {
+        Path servicesPath = fs.getPath("/META-INF/services");
         try {
-            // this was already commented out, but may want to make output work later
-            // Path modFolder = createModFolder(candidate, output);
-            // Files.copy(servicesPath, modFolder.resolve("services"));
+//             getModFolder(fs).ifPresent(modFolder -> {
+//                 try {
+//                     Files.copy(servicesPath, modFolder.resolve("services"));
+//                 } catch (IOException e) {
+//                     System.err.println("Failed to copy services.");
+//                     e.printStackTrace();
+//                 }
+//             });
 
-            Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+            Files.walkFileTree(servicesPath, new SimpleFileVisitor<Path>() {
                 public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
-                    System.out.println("Service in " + root + " " + candidate);
+                    System.out.println("Service in " + servicesPath + " " + candidate);
 
                     return FileVisitResult.CONTINUE;
                 }
@@ -160,5 +183,20 @@ public class ModScanner {
         } catch (IOException swallowed) {
             // TODO: original doesn't catch this exception i think, should we just let this be a fatal error?
         }
+    }
+
+    private Optional<Path> getModFolder(FileSystem fs) {
+        Optional<Path> modFolder = outputPath.map(p -> p.resolve(fs.getPath("/").getFileName()));
+
+        if (modFolder.isPresent() && !Files.exists(modFolder.get())) {
+            try {
+                Files.createDirectory(modFolder.get());
+            } catch (IOException e) {
+                System.err.println("Failed to create output directory! Ignoring.");
+                return Optional.empty();
+            }
+        }
+
+        return modFolder;
     }
 }

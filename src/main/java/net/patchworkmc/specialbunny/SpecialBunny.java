@@ -50,6 +50,7 @@ public class SpecialBunny {
 		final int[] totals = new int[11];
 
 		ModScanner scanner = new ModScanner();
+		scanner.setOutputDirectory(output);
 
 		Files.walkFileTree(holder, new SimpleFileVisitor<Path>() {
 			public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
@@ -138,15 +139,5 @@ public class SpecialBunny {
 
 	private static String percent(int value, int divisor) {
 		return ((value * 1000 / divisor) / 10D) + "%";
-	}
-
-	private static Path createModFolder(Path root, Path output) throws IOException {
-		Path modFolder = output.resolve(root.getFileName().toString());
-
-		if (!Files.exists(modFolder)) {
-			Files.createDirectory(modFolder);
-		}
-
-		return modFolder;
 	}
 }
