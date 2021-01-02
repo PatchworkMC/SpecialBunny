@@ -49,6 +49,9 @@ public class SpecialBunny {
 
 		final int[] totals = new int[11];
 
+		ModScanner scanner = new ModScanner();
+		scanner.setOutputDirectory(output);
+
 		Files.walkFileTree(holder, new SimpleFileVisitor<Path>() {
 			public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
 				Objects.requireNonNull(candidate);
@@ -72,81 +75,46 @@ public class SpecialBunny {
 					return FileVisitResult.CONTINUE;
 				}
 
+				ModInfo info = scanner.scan(jar);
+
 				totals[ALL]++;
 
-				Path manifest = jar.getPath("/META-INF/coremods.json");
-
-				try {
-					String coremods = new String(Files.readAllBytes(manifest), StandardCharsets.UTF_8);
-
-					handleCoreMods(candidate, jar, coremods, output);
-
+				if (info.hasForgeCoremods) {
 					totals[COREMOD]++;
-				} catch (NoSuchFileException swallowed) {
-					// no coremods
 				}
 
-				Path atPath = jar.getPath("/META-INF/accesstransformer.cfg");
-
-				try {
-					String accesstransformers = new String(Files.readAllBytes(atPath), StandardCharsets.UTF_8);
-
-					Path modFolder = createModFolder(candidate, output);
-					Files.copy(atPath, modFolder.resolve("accesstransformer.cfg"), StandardCopyOption.REPLACE_EXISTING);
-
+				if (info.accessTransformers.isPresent()) {
 					totals[AT]++;
-				} catch (NoSuchFileException swallowed) {
-					// no ATs
 				}
 
-				Path servicesPath = jar.getPath("/META-INF/services");
+				// TODO: count services?
 
-				try {
-					scanServices(servicesPath);
-
-					// Path modFolder = createModFolder(candidate, output);
-					// Files.copy(servicesPath, modFolder.resolve("services"));
-
-					System.out.println("Mod with services: " + candidate);
-				} catch (NoSuchFileException swallowed) {
-					// no services
-				}
-
-				boolean fabric = Files.exists(jar.getPath("/fabric.mod.json"));
-				boolean forge = Files.exists(jar.getPath("/META-INF/mods.toml"));
-				boolean forgeLegacy = Files.exists(jar.getPath("/mcmod.info"));
-
-				boolean[] aggressive = aggressiveScan(jar.getPath("/"));
-				// System.out.println("Discovered MCreator mod with aggressive scan: " + candidate);
-				boolean mcreator = Files.exists(jar.getPath("/net/mcreator")) || aggressive[AGGRESSIVE_MCREATOR];
-				boolean mixins = aggressive[AGGRESSIVE_MIXINS];
-
-				if (mixins) {
-					if (fabric) {
+				if (info.hasMixins) {
+					if (info.isFabric) {
 						totals[MIXINS_FABRIC]++;
 					}
 
-					if (forge) {
+					if (info.isForge == ModInfo.ForgeType.YES) {
 						totals[MIXINS_FORGE]++;
 					}
 				}
 
-				if (mcreator) {
-					if (!forge && !forgeLegacy) {
+				if (info.isMCreator) {
+					if (info.isForge == ModInfo.ForgeType.NO) {
 						System.err.println("Non-forge MCreator mod? " + candidate);
 					}
 
 					totals[MCREATOR]++;
 				}
 
-				if (fabric && forge) {
+				if (info.isFabric && info.isForge == ModInfo.ForgeType.YES) {
 					System.err.println("Mod had both fabric and forge? " + candidate);
 					totals[BOTH]++;
-				} else if (fabric) {
+				} else if (info.isFabric) {
 					totals[FABRIC]++;
-				} else if (forge) {
+				} else if (info.isForge == ModInfo.ForgeType.YES) {
 					totals[FORGE]++;
-				} else if(forgeLegacy) {
+				} else if(info.isForge == ModInfo.ForgeType.LEGACY) {
 					System.err.println("Some dummy published a 1.12 or below mod on 1.13+: " + candidate);
 					totals[FORGE_LEGACY]++;
 				} else {
@@ -171,83 +139,5 @@ public class SpecialBunny {
 
 	private static String percent(int value, int divisor) {
 		return ((value * 1000 / divisor) / 10D) + "%";
-	}
-
-	private static boolean[] aggressiveScan(Path root) throws IOException {
-		boolean[] found = new boolean[2];
-
-		Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
-			public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
-				if (candidate.toString().endsWith("ModElement.class")) {
-					found[AGGRESSIVE_MCREATOR] = true;
-				} else if (candidate.toString().endsWith("mixins.json") || candidate.toString().contains("refmap") || (candidate.toString().endsWith(".json") && candidate.toString().startsWith("mixins"))) {
-					found[AGGRESSIVE_MIXINS] = true;
-				}
-
-				return FileVisitResult.CONTINUE;
-			}
-		});
-
-		return found;
-	}
-
-	private static void scanServices(Path root) throws IOException {
-		Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
-			public FileVisitResult visitFile(Path candidate, BasicFileAttributes attributes) throws IOException {
-				System.out.println("Service in " + root + " " + candidate);
-
-				return FileVisitResult.CONTINUE;
-			}
-		});
-	}
-
-	private static Path createModFolder(Path root, Path output) throws IOException {
-		Path modFolder = output.resolve(root.getFileName().toString());
-
-		if (!Files.exists(modFolder)) {
-			Files.createDirectory(modFolder);
-		}
-
-		return modFolder;
-	}
-
-	private static void handleCoreMods(Path root, FileSystem jar, String coremods, Path output) throws IOException {
-		System.out.println("Found coremods.json in " + root);
-		System.out.println(coremods);
-
-		JsonParser parser = new JsonParser();
-
-		JsonElement element = parser.parse(coremods);
-
-		if (!(element instanceof JsonObject)) {
-			throw new RuntimeException("parsed coremods.json was not a JsonObject");
-		}
-
-		JsonObject map = (JsonObject) element;
-
-		Path modFolder = createModFolder(root, output);
-
-		for(Map.Entry<String, JsonElement> entry:  map.entrySet()) {
-			String name = entry.getKey();
-			String path = entry.getValue().getAsString();
-
-			Path coremodFile = jar.getPath(path);
-			String javascript = new String(Files.readAllBytes(coremodFile), StandardCharsets.UTF_8);
-
-			String fileName = coremodFile.getFileName().toString();
-			Path target = modFolder.resolve(fileName);
-
-			while (Files.exists(target)) {
-				System.err.println("Coremod already exists: " + target);
-
-				fileName = "-" + fileName;
-				target = modFolder.resolve(fileName);
-			}
-
-			Files.copy(coremodFile, target, StandardCopyOption.REPLACE_EXISTING);
-
-			System.out.println("Found coremod: " + name);
-			//System.out.println(javascript);
-		}
 	}
 }
